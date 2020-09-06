@@ -18,15 +18,7 @@ pub const Vm = struct{
     pub fn run(self: *Vm, code: []const u8) !u64 {
         self.cs = code;
         while (self.ip < code.len) {
-            var opcode = code[self.ip];
-            switch (@intToEnum(opcode_t, opcode)) {
-                .ADD => Ops.add_impl(self),
-                .MUL => Ops.mul_impl(self),
-                .PUSH => Ops.push_impl(self),
-                .STOP => break,
-                _ => break,
-            }
-            // advance the instruction pointer.
+            Ops.dispatch(self);
             self.ip += 1;
         }
         return do_pop(self);

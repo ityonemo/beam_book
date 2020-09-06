@@ -8,32 +8,44 @@ pub const opcode_t = enum(u8) {
 
 const Vm = @import("vm.zig").Vm;
 
-pub export fn add_impl(self: *Vm) void {
-    Vm.do_push(self, Vm.do_pop(self) + Vm.do_pop(self));
+pub export fn add_impl(vm: *Vm) void {
+    Vm.do_push(vm, Vm.do_pop(vm) + Vm.do_pop(vm));
 }
 
-pub export fn mul_impl(self: *Vm) void {
-    Vm.do_push(self, Vm.do_pop(self) * Vm.do_pop(self));
+pub export fn mul_impl(vm: *Vm) void {
+    Vm.do_push(vm, Vm.do_pop(vm) * Vm.do_pop(vm));
 }
 
-pub export fn push_impl(self: *Vm) void {
-    Vm.do_push(self, next_8_bytes(self));
+pub export fn push_impl(vm: *Vm) void {
+    Vm.do_push(vm, next_8_bytes(vm));
     // advance the instruction by 8 extra slots to account for the
     // 64-bit integer that's just been set into the slot.
-    self.ip += 8;
+    vm.ip += 8;
 }
 
-fn next_8_bytes(self: *const Vm) u64 {
-    var bytes_start = self.ip + 1;
+fn next_8_bytes(vm: *const Vm) u64 {
+    var bytes_start = vm.ip + 1;
     var ival = .{
-        self.cs[bytes_start],
-        self.cs[bytes_start + 1],
-        self.cs[bytes_start + 2],
-        self.cs[bytes_start + 3],
-        self.cs[bytes_start + 4],
-        self.cs[bytes_start + 5],
-        self.cs[bytes_start + 6],
-        self.cs[bytes_start + 7]
+        vm.cs[bytes_start],
+        vm.cs[bytes_start + 1],
+        vm.cs[bytes_start + 2],
+        vm.cs[bytes_start + 3],
+        vm.cs[bytes_start + 4],
+        vm.cs[bytes_start + 5],
+        vm.cs[bytes_start + 6],
+        vm.cs[bytes_start + 7]
     };
     return @bitCast(u64, ival);
+}
+
+const op_t = fn(vm: *Vm) callconv(.C) void;
+
+const operations = [_]op_t{
+    add_impl,
+    mul_impl,
+    push_impl,
+};
+
+pub fn dispatch(vm: *Vm) void {
+    operations[vm.cs[vm.ip]](vm);
 }
