@@ -3,6 +3,7 @@ const Std = @import("std");
 const Debug = Std.debug;
 const Os = Std.os;
 const Mem = Std.mem;
+const Module = @import("src/module.zig").Module;
 const read_file = @import("common.zig").read_file;
 
 pub fn main() !u8 {
@@ -11,8 +12,10 @@ pub fn main() !u8 {
         // temp the filename
         var filepath = Mem.spanZ(Os.argv[1]);
         // create a master buffer
-        var temp_buffer: [100]u8 = undefined;
+        var temp_buffer: [1024]u8 = undefined;
         var code_bytes = try read_file(filepath, temp_buffer[0..]);
+
+        var mod = Module.from_slice(temp_buffer[0..code_bytes]);
 
         return 0;
     } else {
