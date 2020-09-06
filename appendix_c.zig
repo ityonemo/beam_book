@@ -4,7 +4,7 @@ const Fs = Std.fs;
 const Mem = Std.mem;
 const File = Fs.File;
 const Debug = Std.debug;
-const Vm = @import("vm.zig").Vm;
+const Vm = @import("src/vm.zig").Vm;
 
 fn read_file(path: [] const u8, into: []u8) !usize {
     var file = try Fs.cwd().openFile(path, .{});
@@ -24,9 +24,7 @@ pub fn main() !u8 {
         var temp_buffer: [100]u8 = undefined;
         var code_bytes = try read_file(filepath, temp_buffer[0..]);
 
-        var vm: Vm = undefined;
-        Vm.init(&vm);
-
+        var vm = Vm.new();
         var res = try Vm.run(&vm, temp_buffer[0..code_bytes]);
         Debug.warn("result: {}\n", .{res});
 
@@ -35,4 +33,9 @@ pub fn main() !u8 {
         Debug.warn("needs a file name.\n", .{});
         return 1;
     }
+}
+
+// exists to trigger testing across all dependencies.
+test "helper" {
+    Std.meta.refAllDecls(@This());
 }
