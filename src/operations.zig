@@ -9,7 +9,8 @@ pub const opcode_t = enum(u8) {
 const Vm = @import("vm.zig").Vm;
 const Debug = @import("std").debug;
 
-const op_t = fn(vm: *Vm) void;
+const op_t = fn(*Vm) void;
+const data_func_t = fn(*Vm, []const u8, *usize, *usize) void;
 
 // import all of the operations.
 usingnamespace @import("operations/stop.zig");
@@ -23,6 +24,13 @@ const operations = [_]op_t{
     mul_impl,
     push_impl,
 };
+
+fn data_fn(opcode: opcode_t) ?data_func_t {
+  return switch (opcode) {
+    .PUSH => push_data,
+    else => null,
+  };
+}
 
 pub fn dispatch(vm: *Vm) void {
     @intToPtr(op_t, vm.cs[vm.ip])(vm);
@@ -46,19 +54,10 @@ pub fn sequence(vm: *Vm, code: []const u8) void {
 }
 
 fn resequence(vm: *Vm, code: []const u8, code_idx: *usize, cs_idx: *usize) void {
-    switch (@intToEnum(opcode_t, code[code_idx.*])) {
-        .STOP =>
-          vm.cs[cs_idx.*] = @ptrToInt(stop_impl),
-        .ADD =>
-          vm.cs[cs_idx.*] = @ptrToInt(add_impl),
-        .MUL =>
-          vm.cs[cs_idx.*] = @ptrToInt(mul_impl),
-        .PUSH => {
-          vm.cs[cs_idx.*] = @ptrToInt(push_impl);
-          // then add in data.
-          push_data(vm, code, code_idx, cs_idx);
-        },
-        _ =>
-          vm.cs[cs_idx.*] = @ptrToInt(stop_impl),
+    var opcode_int = code[code_idx.*];
+    vm.cs[cs_idx.*] = @ptrToInt(operations[opcode_int]);
+    const df: ?data_func_t = data_fn(@intToEnum(opcode_t, opcode_int));
+    if (df) |func| {
+        func(vm, code, code_idx, cs_idx);
     }
 }
