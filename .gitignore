@@ -2,3 +2,4 @@
 
 appendix_c
 *.o
+*.beam

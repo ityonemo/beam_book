@@ -1,19 +1,10 @@
 const Std = @import("std");
 const Os = Std.os;
-const Fs = Std.fs;
 const Mem = Std.mem;
-const File = Fs.File;
 const Debug = Std.debug;
 const Vm = @import("src/vm.zig").Vm;
 
-fn read_file(path: [] const u8, into: []u8) !usize {
-    var file = try Fs.cwd().openFile(path, .{});
-    defer File.close(file);
-
-    var read_bytes = try File.readAll(file, into[0..]);
-    var file_slice = into[0..(read_bytes - 1)];
-    return read_bytes;
-}
+const read_file = @import("common.zig").read_file;
 
 pub fn main() !u8 {
     // try to read the arguments.
