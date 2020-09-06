@@ -1,13 +1,8 @@
 const Mem = @import("std").mem;
 const Debug = @import("std").debug;
+const Ops = @import("operations.zig");
 
-const opcode_t = enum(u8) {
-    ADD,
-    MUL,
-    PUSH,
-    STOP,
-    _
-};
+const opcode_t = Ops.opcode_t;
 
 pub const Vm = struct{
     stack: [1000]u64 = undefined,
@@ -25,9 +20,9 @@ pub const Vm = struct{
         while (self.ip < code.len) {
             var opcode = code[self.ip];
             switch (@intToEnum(opcode_t, opcode)) {
-                .ADD => add_impl(self),
-                .MUL => mul_impl(self),
-                .PUSH => push_impl(self),
+                .ADD => Ops.add_impl(self),
+                .MUL => Ops.mul_impl(self),
+                .PUSH => Ops.push_impl(self),
                 .STOP => break,
                 _ => break,
             }
@@ -42,27 +37,14 @@ pub const Vm = struct{
     // pushes the next value in the code segment onto the
     // stack.  NB This is different from `do_push` as it expects
     // values that are retrieved off of the instruction stream.
-    fn push_impl(self: *Vm) void {
-        do_push(self, next_8_bytes(self));
-        // advance the instruction by 8 extra slots to account for the
-        // 64-bit integer that's just been set into the slot.
-        self.ip += 8;
-    }
 
-    fn add_impl(self: *Vm) void {
-        do_push(self, do_pop(self) + do_pop(self));
-    }
-    fn mul_impl(self: *Vm) void {
-        do_push(self, do_pop(self) * do_pop(self));
-    }
-
-    // INTERNAL HELPER FUNCTIONS
-    fn do_push(self: *Vm, integer : u64) void {
+    // HELPER FUNCTIONS FOR OPCODES
+    pub fn do_push(self: *Vm, integer : u64) void {
         self.stack[self.sp] = integer;
         self.sp += 1;
     }
 
-    fn do_pop(self: *Vm) u64 {
+    pub fn do_pop(self: *Vm) u64 {
         // decrement the stack pointer
         if (self.sp > 0) {
             self.sp -= 1;
@@ -72,23 +54,9 @@ pub const Vm = struct{
         }
     }
 
+    // INTERNAL FUNCTIONS
     fn stackval(self: *Vm) u64 {
         return self.stack[self.sp];
-    }
-
-    fn next_8_bytes(self: *const Vm) u64 {
-        var bytes_start = self.ip + 1;
-        var ival = .{
-            self.cs[bytes_start],
-            self.cs[bytes_start + 1],
-            self.cs[bytes_start + 2],
-            self.cs[bytes_start + 3],
-            self.cs[bytes_start + 4],
-            self.cs[bytes_start + 5],
-            self.cs[bytes_start + 6],
-            self.cs[bytes_start + 7]
-        };
-        return @bitCast(u64, ival);
     }
 };
 
