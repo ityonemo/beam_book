@@ -1,5 +1,7 @@
 /zig-cache/
 
-appendix_c
+zim
+examine
+
 *.o
 *.beam
