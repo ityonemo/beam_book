@@ -1,6 +1,6 @@
 const Vm = @import("../vm.zig").Vm;
 
-pub export fn mul_impl(vm: *Vm) void {
+pub fn mul_impl(vm: *Vm) void {
     Vm.do_push(vm, Vm.do_pop(vm) * Vm.do_pop(vm));
 }
 

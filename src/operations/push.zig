@@ -1,6 +1,6 @@
 const Vm = @import("../vm.zig").Vm;
 
-pub export fn push_impl(vm: *Vm) void {
+pub fn push_impl(vm: *Vm) void {
     Vm.do_push(vm, vm.cs[vm.ip + 1]);
     // advance the instruction by one 64-bit slot
     vm.ip += 1;

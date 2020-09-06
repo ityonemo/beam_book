@@ -9,7 +9,7 @@ pub const opcode_t = enum(u8) {
 const Vm = @import("vm.zig").Vm;
 const Debug = @import("std").debug;
 
-const op_t = fn(vm: *Vm) callconv(.C) void;
+const op_t = fn(vm: *Vm) void;
 
 // import all of the operations.
 usingnamespace @import("operations/stop.zig");
