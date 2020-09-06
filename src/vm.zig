@@ -5,19 +5,24 @@ const Ops = @import("operations.zig");
 const opcode_t = Ops.opcode_t;
 
 pub const Vm = struct{
-    stack: [1000]u64 = undefined,
-    sp: usize = 0,
-    ip: usize = 0,
-    cs: []const u8 = undefined,
+    stack:  [1000]u64 = undefined,
+    sp:     usize = 0,
+    ip:     usize = 0,
+    cs:     [1000]u64 = undefined,
+    active: bool = false,
 
     pub fn new() Vm {
         // fill the stack with zeros
-        return Vm{.stack = Mem.zeroes([1000]u64)};
+        return Vm{
+            .stack  = Mem.zeroes([1000]u64),
+            .cs     = Mem.zeroes([1000]u64),
+            .active = true,
+        };
     }
 
     pub fn run(self: *Vm, code: []const u8) !u64 {
-        self.cs = code;
-        while (self.ip < code.len) {
+        Ops.sequence(self, code);
+        while (self.active) {
             Ops.dispatch(self);
             self.ip += 1;
         }

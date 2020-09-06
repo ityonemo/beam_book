@@ -12,11 +12,11 @@ const assert = @import("std").debug.assert;
 
 test "add does what is expected" {
     comptime const add_operations =
-        op(.PUSH) ++
-        value(1) ++
-        op(.PUSH) ++
-        value(2) ++
-        op(.ADD);
+        @"op"(.PUSH) ++
+        @"value"(1) ++
+        @"op"(.PUSH) ++
+        @"value"(2) ++
+        @"op"(.ADD);
 
     var vm = Vm.new();
     var result = try Vm.run(&vm, add_operations[0..]);
