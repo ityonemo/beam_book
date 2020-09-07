@@ -2,17 +2,23 @@ const Debug = @import("std").debug;
 const Mem = @import("std").mem;
 
 const Module = @import("../module.zig").Module;
+const ModuleError = @import("../module.zig").ModuleError;
 
 pub const AtomTable = struct{
-    entries: [][]u8 = undefined,
+    const entries_t = []?[]u8;
+
+    entries: entries_t = undefined,
     allocator: *Mem.Allocator,
 
     const Atom = struct{
-        fn parse(allocator: *Mem.Allocator, entry_ptr: *[] u8, slice_ptr: *[] const u8) !void {
+        fn parse(allocator: *Mem.Allocator, entry_ptr: *?[]u8, slice_ptr: *[] const u8) !void {
             var slice = slice_ptr.*;
             var size: usize = slice[0];
+            // verify that the length is correct
+            if (size >= slice.len) return ModuleError.TOO_SHORT;
+
             entry_ptr.* = try allocator.alloc(u8, size);
-            Mem.copy(u8, entry_ptr.*, slice[1..1 + size]);
+            Mem.copy(u8, entry_ptr.*.?, slice[1..1 + size]);
             // advance the slice pointer.
             slice_ptr.* = slice[1 + size..];
         }
@@ -32,8 +38,8 @@ pub const AtomTable = struct{
         // next 4-byte segment is the "total number of atoms"
         var atom_count: usize = Module.little_bytes_to_value(slice[8..12]);
 
-        // go ahead and build out the space for the atom table.
-        var entries: [][]u8 = try allocator.alloc([]u8, atom_count);
+        // build a basic entries table.
+        var entries = try build_entries(allocator, atom_count);
 
         // run a parser over the entries.
         var atom_slice_ptr = slice[12..];
@@ -45,8 +51,29 @@ pub const AtomTable = struct{
     }
 
     pub fn destroy(self: *AtomTable) void {
-        for (self.entries) |entry| {self.allocator.free(entry);}
-        self.allocator.free(self.entries);
+        clear_entries(self.allocator, self.entries);
+    }
+
+    fn build_entries(allocator: *Mem.Allocator, count: usize) !entries_t {
+        var entries = try allocator.alloc(?[]u8, count);
+        // intialize the entries with null values.
+        for (entries) | *entry | { entry.* = null; }
+        return entries;
+    }
+
+    // safely clears entries that have been built, whether or not they
+    // contain null values.
+    fn clear_entries(allocator: *Mem.Allocator, entries: entries_t) void {
+        for (entries) |entry| {
+            if (entry) | safe_entry | {allocator.free(safe_entry);}
+        }
+        allocator.free(entries);
+    }
+
+    fn parser_loop(allocator: *Mem.Allocator, entries: entries_t, source: *[]const u8) !void {
+        for (entries) | *entry | {
+            try Atom.parse(test_allocator, entry, source);
+        }
     }
 };
 
@@ -60,28 +87,50 @@ var runtime_zero: usize = 0;
 
 test "atom parser works on a single atom" {
     const foo_atom = [_]u8{3, 'f', 'o', 'o'};
-    var dest: []u8 = undefined;
+    var dest: ?[]u8 = undefined;
     var source = foo_atom[runtime_zero..];
 
     try AtomTable.Atom.parse(test_allocator, &dest, &source);
-    defer test_allocator.free(dest);
+    defer test_allocator.free(dest.?);
 
     // check that the parser has moved the source slice to the end.
     assert(source.len == 0);
-    assert(Mem.eql(u8, dest, "foo"));
+    assert(Mem.eql(u8, dest.?, "foo"));
+}
+
+test "atom parser raises if the data are too short" {
+    const foo_atom = [_]u8{3, 'f', 'o'};
+    var dest: ?[]u8 = undefined;
+    var source = foo_atom[runtime_zero..];
+
+    _ = AtomTable.Atom.parse(test_allocator, &dest, &source) catch | err | switch (err) {
+        ModuleError.TOO_SHORT => 42,
+        else => unreachable,
+    };
 }
 
 test "atom parser can be attached to a for loop for more than one atom" {
-    const foo_atom = [_]u8{3, 'f', 'o', 'o', 7, 'b', 'a', 'r', 'q', 'u', 'u', 'x'};
-    var dest: [][]u8 = try test_allocator.alloc([]u8, 2);
-    defer test_allocator.free(dest);
+    const test_atoms = [_]u8{3, 'f', 'o', 'o', 7, 'b', 'a', 'r', 'q', 'u', 'u', 'x'};
+    var dest = try AtomTable.build_entries(test_allocator, 2);
+    defer AtomTable.clear_entries(test_allocator, dest);
 
-    var source = foo_atom[runtime_zero..];
-    for (dest) | *entry | { try AtomTable.Atom.parse(test_allocator, entry, &source); }
-    defer for (dest) | entry | { test_allocator.free(entry); };
+    var source = test_atoms[runtime_zero..];
+    try AtomTable.parser_loop(test_allocator, dest, &source);
 
-    assert(Mem.eql(u8, dest[0], "foo"));
-    assert(Mem.eql(u8, dest[1], "barquux"));
+    assert(Mem.eql(u8, dest[0].?, "foo"));
+    assert(Mem.eql(u8, dest[1].?, "barquux"));
+}
+
+test "atom parser raises if the data are too short" {
+    const test_atoms = [_]u8{3, 'f', 'o', 'o', 7, 'b', 'a', 'r', 'q', 'u', 'u'};
+    var dest = try AtomTable.build_entries(test_allocator, 2);
+    defer AtomTable.clear_entries(test_allocator, dest);
+
+    var source = test_atoms[runtime_zero..];
+    AtomTable.parser_loop(test_allocator, dest, &source) catch |err| switch (err) {
+        ModuleError.TOO_SHORT => return,
+        else => unreachable,
+    };
 }
 
 fn build_atom_header(rest: []const u8) usize {
@@ -103,7 +152,7 @@ test "table parser works on one atom value" {
 
     // check that atomtable has the the meats.
     assert(atomtable.entries.len == 1);
-    assert(Mem.eql(u8, atomtable.entries[0], "foo"));
+    assert(Mem.eql(u8, atomtable.entries[0].?, "foo"));
 
     // check that the slice has been advanced.
     assert(slice.len == 0);
@@ -127,6 +176,6 @@ test "module can parse atom table" {
 
     var atoms = module.atomtable.?.entries;
     assert(atoms.len == 2);
-    assert(Mem.eql(u8, atoms[0], "foo"));
-    assert(Mem.eql(u8, atoms[1], "barbaz"));
+    assert(Mem.eql(u8, atoms[0].?, "foo"));
+    assert(Mem.eql(u8, atoms[1].?, "barbaz"));
 }
