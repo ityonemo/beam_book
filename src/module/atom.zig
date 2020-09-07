@@ -12,7 +12,7 @@ pub const AtomTable = struct{
             var slice = slice_ptr.*;
             var size: usize = slice[0];
             entry_ptr.* = try allocator.alloc(u8, size);
-            Mem.copy(u8, entry_ptr.*, slice[1..]);
+            Mem.copy(u8, entry_ptr.*, slice[1..1 + size]);
             // advance the slice pointer.
             slice_ptr.* = slice[1 + size..];
         }
@@ -21,19 +21,21 @@ pub const AtomTable = struct{
     pub fn parse(allocator: *Mem.Allocator, slice_ptr: *[] const u8) !AtomTable {
         var slice = slice_ptr.*; // convenience definition
 
-        // does this no-op in release-fast?  double checks that we are in
-        // an atom module.
+        // TODO: does this no-op in release-fast?
+        // double checks that we are in an atom module.
         Debug.assert(Mem.eql(u8, slice[0..4], "AtU8"));
 
-        // first segment is the "total chunk length"
+        // first 4-byte segment is the "total chunk length"
         var chunk_length: usize = Module.little_bytes_to_value(slice[4..8]);
         defer slice_ptr.* = slice[chunk_length..];
 
-        // next segment is the "total number of atoms"
+        // next 4-byte segment is the "total number of atoms"
         var atom_count: usize = Module.little_bytes_to_value(slice[8..12]);
 
+        // go ahead and build out the space for the atom table.
         var entries: [][]u8 = try allocator.alloc([]u8, atom_count);
 
+        // run a parser over the entries.
         var atom_slice_ptr = slice[12..];
         for (entries) | *entry | {
             try Atom.parse(allocator, entry, &atom_slice_ptr);
@@ -54,6 +56,31 @@ pub const AtomTable = struct{
 const Heap = @import("std").heap;
 const test_allocator = @import("std").testing.allocator;
 const assert = @import("std").debug.assert;
+var runtime_zero: usize = 0;
+
+test "atom parser works on a single atom" {
+    const foo_atom = [_]u8{3, 'f', 'o', 'o'};
+    var dest: []u8 = undefined;
+    var source = foo_atom[runtime_zero..];
+
+    try AtomTable.Atom.parse(test_allocator, &dest, &source);
+    defer test_allocator.free(dest);
+
+    assert(Mem.eql(u8, dest, "foo"));
+}
+
+test "atom parser works on a more than one atom" {
+    const foo_atom = [_]u8{3, 'f', 'o', 'o', 7, 'b', 'a', 'r', 'q', 'u', 'u', 'x'};
+    var dest: [][]u8 = try test_allocator.alloc([]u8, 2);
+    defer test_allocator.free(dest);
+
+    var source = foo_atom[runtime_zero..];
+    for (dest) | *entry | { try AtomTable.Atom.parse(test_allocator, entry, &source); }
+    defer for (dest) | entry | { test_allocator.free(entry); };
+
+    assert(Mem.eql(u8, dest[0], "foo"));
+    assert(Mem.eql(u8, dest[1], "barquux"));
+}
 
 fn build_atom_header(rest: []const u8) usize {
     Mem.copy(u8, test_mod[0..16], form_with_atom[0..]);
@@ -67,7 +94,6 @@ test "parser works on one atom value" {
                                     0, 0, 0, 16,       // length of this table
                                     0, 0, 0, 1,        // number of atoms
                                     3, 'f', 'o', 'o'}; // atom len + string
-    var runtime_zero: usize = 0;
     var slice = basic_atom_value[runtime_zero..];
 
     var atomtable = try AtomTable.parse(test_allocator, &slice);
