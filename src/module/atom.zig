@@ -66,10 +66,12 @@ test "atom parser works on a single atom" {
     try AtomTable.Atom.parse(test_allocator, &dest, &source);
     defer test_allocator.free(dest);
 
+    // check that the parser has moved the source slice to the end.
+    assert(source.len == 0);
     assert(Mem.eql(u8, dest, "foo"));
 }
 
-test "atom parser works on a more than one atom" {
+test "atom parser can be attached to a for loop for more than one atom" {
     const foo_atom = [_]u8{3, 'f', 'o', 'o', 7, 'b', 'a', 'r', 'q', 'u', 'u', 'x'};
     var dest: [][]u8 = try test_allocator.alloc([]u8, 2);
     defer test_allocator.free(dest);
@@ -89,7 +91,7 @@ fn build_atom_header(rest: []const u8) usize {
     return 16 + rest.len;
 }
 
-test "parser works on one atom value" {
+test "table parser works on one atom value" {
     const basic_atom_value = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
                                     0, 0, 0, 16,       // length of this table
                                     0, 0, 0, 1,        // number of atoms
