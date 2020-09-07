@@ -26,25 +26,25 @@ pub const AtomTable = struct{
 
     /// creates an AtomTable by parsing a slice that begins with a binary
     /// chunk that fits the atom table format.
-    pub fn parse(allocator: *Mem.Allocator, slice_ptr: *[] const u8) !AtomTable {
-        var slice = slice_ptr.*; // convenience definition
-        // slice must be at least 12 bytes to accomodate full header
-        if (slice.len <= 12) return ModuleError.TOO_SHORT;
+    pub fn parse(allocator: *Mem.Allocator, source_ptr: *[] const u8) !AtomTable {
+        var source = source_ptr.*; // convenience definition
+        // source must be at least 12 bytes to accomodate full header
+        if (source.len <= 12) return ModuleError.TOO_SHORT;
 
         // TODO: does this no-op in release-fast?
         // double checks that we are in an atom module.
-        Debug.assert(Mem.eql(u8, slice[0..4], "AtU8"));
+        Debug.assert(Mem.eql(u8, source[0..4], "AtU8"));
 
         // first 4-byte segment is the "total chunk length"
-        var chunk_length: usize = Module.little_bytes_to_value(slice[4..8]);
+        var chunk_length: usize = Module.little_bytes_to_value(source[4..8]);
 
-        // verify that this our slice is long enough and is aligned well
-        if (chunk_length > slice.len) return ModuleError.TOO_SHORT;
+        // verify that this our source is long enough and is aligned well
+        if (chunk_length > source.len) return ModuleError.TOO_SHORT;
         if ((chunk_length & 0x3) != 0) return ModuleError.BAD_ALIGN;
-        defer slice_ptr.* = slice[chunk_length..];
+        defer source_ptr.* = source[chunk_length..];
 
         // next 4-byte segment is the "total number of atoms"
-        var atom_count: usize = Module.little_bytes_to_value(slice[8..12]);
+        var atom_count: usize = Module.little_bytes_to_value(source[8..12]);
 
         // build a basic entries table.
         var entries = try build_entries(allocator, atom_count);
@@ -54,8 +54,8 @@ pub const AtomTable = struct{
         // NB: this might fail on allocation, but that's okay, because
         // we are already clearing all entries in the errdefer statement
         // above.
-        var atom_slice_ptr = slice[12..];
-        try parser_loop(allocator, entries, &atom_slice_ptr);
+        var atom_source_ptr = source[12..];
+        try parser_loop(allocator, entries, &atom_source_ptr);
 
         return AtomTable{.entries = entries, .allocator = allocator};
     }
@@ -110,17 +110,6 @@ test "atom parser works on a single atom" {
     assert(Mem.eql(u8, dest.?, "foo"));
 }
 
-test "atom parser raises if the data are too short" {
-    const foo_atom = [_]u8{3, 'f', 'o'};
-    var dest: ?[]u8 = undefined;
-    var source = foo_atom[runtime_zero..];
-
-    _ = AtomTable.Atom.parse(test_allocator, &dest, &source) catch | err | switch (err) {
-        ModuleError.TOO_SHORT => 42,
-        else => unreachable,
-    };
-}
-
 test "atom parser can be attached to a for loop for more than one atom" {
     const test_atoms = [_]u8{3, 'f', 'o', 'o', 7, 'b', 'a', 'r', 'q', 'u', 'u', 'x'};
     var dest = try AtomTable.build_entries(test_allocator, 2);
@@ -135,27 +124,49 @@ test "atom parser can be attached to a for loop for more than one atom" {
 
 // FAILURE PATHS
 test "atom parser raises if the data are too short" {
-    const test_atoms = [_]u8{3, 'f', 'o', 'o', 7, 'b', 'a', 'r', 'q', 'u', 'u'};
+    const incomplete_atom = [_]u8{3, 'f', 'o'};
+    var dest: ?[]u8 = undefined;
+    var source = incomplete_atom[runtime_zero..];
+
+    _ = AtomTable.Atom.parse(test_allocator, &dest, &source) catch | err | switch (err) {
+        ModuleError.TOO_SHORT => 42,
+        else => unreachable,
+    };
+}
+
+test "atom parser raises if the data are too short" {
+    const incomplete_atoms = [_]u8{3, 'f', 'o', 'o', 7, 'b', 'a', 'r', 'q', 'u', 'u'};
     var dest = try AtomTable.build_entries(test_allocator, 2);
     defer AtomTable.clear_entries(test_allocator, dest);
 
-    var source = test_atoms[runtime_zero..];
+    var source = incomplete_atoms[runtime_zero..];
     AtomTable.parser_loop(test_allocator, dest, &source) catch |err| switch (err) {
         ModuleError.TOO_SHORT => return,
         else => unreachable,
     };
 }
 
+test "atom parser raises if there aren't enough entries" {
+    const incomplete_atoms = [_]u8{3, 'f', 'o', 'o', 7, 'b', 'a', 'r', 'q', 'u', 'u'};
+    var dest = try AtomTable.build_entries(test_allocator, 3);
+    defer AtomTable.clear_entries(test_allocator, dest);
+
+    var source = incomplete_atoms[runtime_zero..];
+    AtomTable.parser_loop(test_allocator, dest, &source) catch |err| switch (err) {
+        ModuleError.TOO_SHORT => return,
+        else => unreachable,
+    };
+}
 
 // //////////////////////////////////////////////////////////////////////
 // TABLE TESTS
 
 test "table parser works on one atom value" {
-    const basic_atom_value = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
-                                    0, 0, 0, 16,       // length of this table
-                                    0, 0, 0, 1,        // number of atoms
-                                    3, 'f', 'o', 'o'}; // atom len + string
-    var slice = basic_atom_value[runtime_zero..];
+    const table = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
+                         0, 0, 0, 16,       // length of this table
+                         0, 0, 0, 1,        // number of atoms
+                         3, 'f', 'o', 'o'}; // atom len + string
+    var slice = table[runtime_zero..];
 
     var atomtable = try AtomTable.parse(test_allocator, &slice);
     defer AtomTable.destroy(&atomtable);
@@ -169,13 +180,13 @@ test "table parser works on one atom value" {
 }
 
 test "table parser works on more than one atom value" {
-    const basic_atom_value = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
-                                    0, 0, 0, 24,       // length of this table
-                                    0, 0, 0, 2,        // number of atoms
-                                    3, 'f', 'o', 'o',
-                                    6, 'b', 'a', 'r',
-                                    'b', 'a', 'z', 0}; // atom len + string
-    var slice = basic_atom_value[runtime_zero..];
+    const table = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
+                         0, 0, 0, 24,       // length of this table
+                         0, 0, 0, 2,        // number of atoms
+                         3, 'f', 'o', 'o',
+                         6, 'b', 'a', 'r',
+                        'b', 'a', 'z', 0}; // atom len + string
+    var slice = table[runtime_zero..];
 
     var atomtable = try AtomTable.parse(test_allocator, &slice);
     defer AtomTable.destroy(&atomtable);
@@ -191,9 +202,9 @@ test "table parser works on more than one atom value" {
 
 // FAILURE PATHS
 test "incomplete table fails" {
-    const basic_atom_value = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
-                                    0, 0, 0, 8};       // incomplete chunk
-    var slice = basic_atom_value[runtime_zero..];
+    const table = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
+                         0, 0, 0, 8};       // incomplete chunk
+    var slice = table[runtime_zero..];
 
     _ = AtomTable.parse(test_allocator, &slice) catch | err | switch (err) {
         ModuleError.TOO_SHORT => return,
@@ -202,13 +213,13 @@ test "incomplete table fails" {
 }
 
 test "table fails on misaligned values" {
-    const basic_atom_value = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
-                                    0, 0, 0, 25,       // misaligned value
-                                    0, 0, 0, 2,        // number of atoms
-                                    3, 'f', 'o', 'o',
-                                    6, 'b', 'a', 'r',
-                                    'b', 'a', 'z', 0, 0}; // atom len + string
-    var slice = basic_atom_value[runtime_zero..];
+    const table = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
+                         0, 0, 0, 25,       // misaligned value
+                         0, 0, 0, 2,        // number of atoms
+                         3, 'f', 'o', 'o',
+                         6, 'b', 'a', 'r',
+                         'b', 'a', 'z', 0, 0}; // atom len + string
+    var slice = table[runtime_zero..];
 
     _ = AtomTable.parse(test_allocator, &slice) catch | err | switch (err) {
         ModuleError.BAD_ALIGN => return,
@@ -220,17 +231,17 @@ test "table fails on misaligned values" {
 // MODULE INTEGRATION TESTS
 
 test "module can parse atom table" {
-    const module_with_atom = [_]u8{'F', 'O', 'R', '1', // HEADER
-                                    0, 0, 0, 28,
-                                   'B', 'E', 'A', 'M',
-                                   'A', 't', 'U', '8', // utf-8 atoms
-                                    0, 0, 0, 24,       // length of this table
-                                    0, 0, 0, 2,        // number of atoms
-                                    3, 'f', 'o', 'o',  // atom1 len + string
-                                    6, 'b', 'a', 'r',  // atom2 + padding
-                                    'b', 'a', 'z', 0};
+    const module_table = [_]u8{'F', 'O', 'R', '1', // HEADER
+                                0, 0, 0, 28,
+                               'B', 'E', 'A', 'M',
+                               'A', 't', 'U', '8', // utf-8 atoms
+                                0, 0, 0, 24,       // length of this table
+                                0, 0, 0, 2,        // number of atoms
+                                3, 'f', 'o', 'o',  // atom1 len + string
+                                6, 'b', 'a', 'r',  // atom2 + padding
+                                'b', 'a', 'z', 0};
 
-    var module_slice = module_with_atom[runtime_zero..];
+    var module_slice = module_table[runtime_zero..];
 
     var module = try Module.from_slice(test_allocator, module_slice);
     defer Module.destroy(&module);
@@ -242,17 +253,17 @@ test "module can parse atom table" {
 }
 
 test "module fails if the table is too short" {
-    const module_with_atom = [_]u8{'F', 'O', 'R', '1', // HEADER
-                                    0, 0, 0, 28,
-                                   'B', 'E', 'A', 'M',
-                                   'A', 't', 'U', '8', // utf-8 atoms
-                                    0, 0, 0, 28,       // length of this table
-                                    0, 0, 0, 2,        // number of atoms
-                                    3, 'f', 'o', 'o',  // atom1 len + string
-                                    6, 'b', 'a', 'r',  // atom2 + padding
-                                    'b', 'a', 'z', 0};
+    const module_table = [_]u8{'F', 'O', 'R', '1', // HEADER
+                                0, 0, 0, 28,
+                               'B', 'E', 'A', 'M',
+                               'A', 't', 'U', '8', // utf-8 atoms
+                                0, 0, 0, 28,       // length of this table
+                                0, 0, 0, 2,        // number of atoms
+                                3, 'f', 'o', 'o',  // atom1 len + string
+                                6, 'b', 'a', 'r',  // atom2 + padding
+                                'b', 'a', 'z', 0};
 
-    var module_slice = module_with_atom[runtime_zero..];
+    var module_slice = module_table[runtime_zero..];
 
     _ = Module.from_slice(test_allocator, module_slice) catch | err | switch (err) {
         ModuleError.TOO_SHORT => return,
