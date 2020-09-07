@@ -26,8 +26,8 @@ pub fn validate(binary: []const u8) !usize {
     };
 
     if (binary.len != size + 8) return ModuleError.MISMATCHED_SIZE;
-    if (Mem.order(u8, binary[0..4], prefix[0..4]) != .eq) return FormError.INVALID_HEADER;
-    if (Mem.order(u8, binary[8..12], suffix[0..4]) != .eq) return FormError.INVALID_HEADER;
+    if (! Mem.eql(u8, binary[0..4], prefix[0..4])) return FormError.INVALID_HEADER;
+    if (! Mem.eql(u8, binary[8..12], suffix[0..4])) return FormError.INVALID_HEADER;
     return size;
 }
 

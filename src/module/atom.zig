@@ -23,7 +23,7 @@ pub const AtomTable = struct{
 
         // does this no-op in release-fast?  double checks that we are in
         // an atom module.
-        Debug.assert(Mem.order(u8, slice[0..4], "AtU8") == .eq);
+        Debug.assert(Mem.eql(u8, slice[0..4], "AtU8"));
 
         // first segment is the "total chunk length"
         var chunk_length: usize = Module.little_bytes_to_value(slice[4..8]);
@@ -75,7 +75,7 @@ test "parser works on one atom value" {
 
     // check that atomtable has the the meats.
     assert(atomtable.entries.len == 1);
-    assert(Mem.order(u8, atomtable.entries[0], "foo") == .eq);
+    assert(Mem.eql(u8, atomtable.entries[0], "foo"));
 
     // check that the slice has been advanced.
     assert(slice.len == 0);
