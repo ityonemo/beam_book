@@ -28,6 +28,8 @@ pub const AtomTable = struct{
     /// chunk that fits the atom table format.
     pub fn parse(allocator: *Mem.Allocator, slice_ptr: *[] const u8) !AtomTable {
         var slice = slice_ptr.*; // convenience definition
+        // slice must be at least 12 bytes to accomodate full header
+        if (slice.len <= 12) return ModuleError.TOO_SHORT;
 
         // TODO: does this no-op in release-fast?
         // double checks that we are in an atom module.
@@ -35,8 +37,10 @@ pub const AtomTable = struct{
 
         // first 4-byte segment is the "total chunk length"
         var chunk_length: usize = Module.little_bytes_to_value(slice[4..8]);
-        // verify that this our slice is long enough
+
+        // verify that this our slice is long enough and is aligned well
         if (chunk_length > slice.len) return ModuleError.TOO_SHORT;
+        if ((chunk_length & 0x3) != 0) return ModuleError.BAD_ALIGN;
         defer slice_ptr.* = slice[chunk_length..];
 
         // next 4-byte segment is the "total number of atoms"
@@ -129,6 +133,7 @@ test "atom parser can be attached to a for loop for more than one atom" {
     assert(Mem.eql(u8, dest[1].?, "barquux"));
 }
 
+// FAILURE PATHS
 test "atom parser raises if the data are too short" {
     const test_atoms = [_]u8{3, 'f', 'o', 'o', 7, 'b', 'a', 'r', 'q', 'u', 'u'};
     var dest = try AtomTable.build_entries(test_allocator, 2);
@@ -141,12 +146,9 @@ test "atom parser raises if the data are too short" {
     };
 }
 
-fn build_atom_header(rest: []const u8) usize {
-    Mem.copy(u8, test_mod[0..16], form_with_atom[0..]);
-    Mem.copy(u8, test_mod[16..16 + rest.len], rest);
-    test_mod[7] = @intCast(u8, rest.len + 8);
-    return 16 + rest.len;
-}
+
+// //////////////////////////////////////////////////////////////////////
+// TABLE TESTS
 
 test "table parser works on one atom value" {
     const basic_atom_value = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
@@ -186,6 +188,36 @@ test "table parser works on more than one atom value" {
     // check that the slice has been advanced.
     assert(slice.len == 0);
 }
+
+// FAILURE PATHS
+test "incomplete table fails" {
+    const basic_atom_value = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
+                                    0, 0, 0, 8};       // incomplete chunk
+    var slice = basic_atom_value[runtime_zero..];
+
+    _ = AtomTable.parse(test_allocator, &slice) catch | err | switch (err) {
+        ModuleError.TOO_SHORT => return,
+        else => unreachable,
+    };
+}
+
+test "table fails on misaligned values" {
+    const basic_atom_value = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
+                                    0, 0, 0, 25,       // misaligned value
+                                    0, 0, 0, 2,        // number of atoms
+                                    3, 'f', 'o', 'o',
+                                    6, 'b', 'a', 'r',
+                                    'b', 'a', 'z', 0, 0}; // atom len + string
+    var slice = basic_atom_value[runtime_zero..];
+
+    _ = AtomTable.parse(test_allocator, &slice) catch | err | switch (err) {
+        ModuleError.BAD_ALIGN => return,
+        else => unreachable,
+    };
+}
+
+// //////////////////////////////////////////////////////////////////////
+// MODULE INTEGRATION TESTS
 
 test "module can parse atom table" {
     const module_with_atom = [_]u8{'F', 'O', 'R', '1', // HEADER

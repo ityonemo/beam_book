@@ -11,6 +11,7 @@ const AtomTable = @import("module/atom.zig").AtomTable;
 
 pub const ModuleError = error {
     INVALID_CHUNK,
+    BAD_ALIGN,
     TOO_SHORT,
     MISMATCHED_SIZE,
 };
