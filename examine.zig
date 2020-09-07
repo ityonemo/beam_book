@@ -23,3 +23,8 @@ pub fn main() !u8 {
         return 1;
     }
 }
+
+// exists to trigger testing across all dependencies.
+test "helper" {
+    Std.meta.refAllDecls(@This());
+}
