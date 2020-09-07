@@ -16,14 +16,14 @@ pub const ModuleError = error {
 };
 
 pub const Module = struct {
-    atom: u0 = 0,
-    expt: u0 = 0,
-    impt: u0 = 0,
-    code: u0 = 0,
-    strt: u0 = 0,
-    attr: u0 = 0,
-    cinf: u0 = 0,
-    loct: u0 = 0,
+    atomtable: ?AtomTable = null,
+    expttable: u0 = 0,
+    impttable: u0 = 0,
+    codetable: u0 = 0,
+    strttable: u0 = 0,
+    attrtable: u0 = 0,
+    cinftable: u0 = 0,
+    locttable: u0 = 0,
 
     // the module object should hold on to its allocator for
     // self-consistency.
@@ -55,10 +55,14 @@ pub const Module = struct {
     fn parse_slice(module: *Module, slice: *[]const u8) !void {
         switch (@intToEnum(chunk_t, Mem.bytesToValue(u32, slice.*[0..4]))) {
             .ATOM =>
-              _ = try AtomTable.parse(module.allocator, slice),
+              module.atomtable = try AtomTable.parse(module.allocator, slice),
             else =>
               unreachable,
         }
+    }
+
+    pub fn destroy(module: *Module) void {
+        if (module.atomtable) | *table | { AtomTable.destroy(table); }
     }
 
     pub fn dump(mod: Module) void {}

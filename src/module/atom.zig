@@ -109,7 +109,24 @@ test "table parser works on one atom value" {
     assert(slice.len == 0);
 }
 
+test "module can parse atom table" {
+    const module_with_atom = [_]u8{'F', 'O', 'R', '1', // HEADER
+                                    0, 0, 0, 28,
+                                   'B', 'E', 'A', 'M',
+                                   'A', 't', 'U', '8', // utf-8 atoms
+                                    0, 0, 0, 16,       // length of this table
+                                    0, 0, 0, 2,        // number of atoms
+                                    3, 'f', 'o', 'o',  // atom1 len + string
+                                    6, 'b', 'a', 'r',  // atom2 + padding
+                                    'b', 'a', 'z', 0};
 
-//test "an atom bit is detected" {
-//    _ = try Module.from_slice(test_allocator, test_mod[0..bound]);
-//}
+    var module_slice = module_with_atom[runtime_zero..];
+
+    var module = try Module.from_slice(test_allocator, module_slice);
+    defer Module.destroy(&module);
+
+    var atoms = module.atomtable.?.entries;
+    assert(atoms.len == 2);
+    assert(Mem.eql(u8, atoms[0], "foo"));
+    assert(Mem.eql(u8, atoms[1], "barbaz"));
+}
