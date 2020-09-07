@@ -13,6 +13,9 @@ pub const AtomTable = struct{
     const Atom = struct{
         fn parse(allocator: *Mem.Allocator, entry_ptr: *?[]u8, slice_ptr: *[] const u8) !void {
             var slice = slice_ptr.*;
+            // did we run out of atoms?
+            if (slice.len == 0) return ModuleError.TOO_SHORT;
+
             var size: usize = slice[0];
             // verify that the length is correct
             if (size >= slice.len) return ModuleError.TOO_SHORT;
@@ -147,7 +150,19 @@ test "atom parser raises if the data are too short" {
 }
 
 test "atom parser raises if there aren't enough entries" {
-    const incomplete_atoms = [_]u8{3, 'f', 'o', 'o', 7, 'b', 'a', 'r', 'q', 'u', 'u'};
+    const incomplete_atoms = [_]u8{3, 'f', 'o', 'o', 7, 'b', 'a', 'r', 'q', 'u', 'u', 'x'};
+    var dest = try AtomTable.build_entries(test_allocator, 3);
+    defer AtomTable.clear_entries(test_allocator, dest);
+
+    var source = incomplete_atoms[runtime_zero..];
+    AtomTable.parser_loop(test_allocator, dest, &source) catch |err| switch (err) {
+        ModuleError.TOO_SHORT => return,
+        else => unreachable,
+    };
+}
+
+test "atom parser raises if there aren't enough entries" {
+    const incomplete_atoms = [_]u8{3, 'f', 'o', 'o', 6, 'b', 'a', 'r', 'b', 'a', 'z', 0};
     var dest = try AtomTable.build_entries(test_allocator, 3);
     defer AtomTable.clear_entries(test_allocator, dest);
 
