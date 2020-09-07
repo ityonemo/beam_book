@@ -24,6 +24,8 @@ pub const AtomTable = struct{
         }
     };
 
+    /// creates an AtomTable by parsing a slice that begins with a binary
+    /// chunk that fits the atom table format.
     pub fn parse(allocator: *Mem.Allocator, slice_ptr: *[] const u8) !AtomTable {
         var slice = slice_ptr.*; // convenience definition
 
@@ -33,6 +35,8 @@ pub const AtomTable = struct{
 
         // first 4-byte segment is the "total chunk length"
         var chunk_length: usize = Module.little_bytes_to_value(slice[4..8]);
+        // verify that this our slice is long enough
+        if (chunk_length > slice.len) return ModuleError.TOO_SHORT;
         defer slice_ptr.* = slice[chunk_length..];
 
         // next 4-byte segment is the "total number of atoms"
@@ -40,16 +44,20 @@ pub const AtomTable = struct{
 
         // build a basic entries table.
         var entries = try build_entries(allocator, atom_count);
+        errdefer clear_entries(allocator, entries);
 
         // run a parser over the entries.
+        // NB: this might fail on allocation, but that's okay, because
+        // we are already clearing all entries in the errdefer statement
+        // above.
         var atom_slice_ptr = slice[12..];
-        for (entries) | *entry | {
-            try Atom.parse(allocator, entry, &atom_slice_ptr);
-        }
+        try parser_loop(allocator, entries, &atom_slice_ptr);
 
         return AtomTable{.entries = entries, .allocator = allocator};
     }
 
+    /// destroys an AtomTable, cleaning up all dependent entries inside
+    /// the table itself.
     pub fn destroy(self: *AtomTable) void {
         clear_entries(self.allocator, self.entries);
     }
@@ -158,12 +166,33 @@ test "table parser works on one atom value" {
     assert(slice.len == 0);
 }
 
+test "table parser works on more than one atom value" {
+    const basic_atom_value = [_]u8{'A', 't', 'U', '8', // utf-8 atoms
+                                    0, 0, 0, 24,       // length of this table
+                                    0, 0, 0, 2,        // number of atoms
+                                    3, 'f', 'o', 'o',
+                                    6, 'b', 'a', 'r',
+                                    'b', 'a', 'z', 0}; // atom len + string
+    var slice = basic_atom_value[runtime_zero..];
+
+    var atomtable = try AtomTable.parse(test_allocator, &slice);
+    defer AtomTable.destroy(&atomtable);
+
+    // check that atomtable has the the meats.
+    assert(atomtable.entries.len == 2);
+    assert(Mem.eql(u8, atomtable.entries[0].?, "foo"));
+    assert(Mem.eql(u8, atomtable.entries[1].?, "barbaz"));
+
+    // check that the slice has been advanced.
+    assert(slice.len == 0);
+}
+
 test "module can parse atom table" {
     const module_with_atom = [_]u8{'F', 'O', 'R', '1', // HEADER
                                     0, 0, 0, 28,
                                    'B', 'E', 'A', 'M',
                                    'A', 't', 'U', '8', // utf-8 atoms
-                                    0, 0, 0, 16,       // length of this table
+                                    0, 0, 0, 24,       // length of this table
                                     0, 0, 0, 2,        // number of atoms
                                     3, 'f', 'o', 'o',  // atom1 len + string
                                     6, 'b', 'a', 'r',  // atom2 + padding
@@ -178,4 +207,23 @@ test "module can parse atom table" {
     assert(atoms.len == 2);
     assert(Mem.eql(u8, atoms[0].?, "foo"));
     assert(Mem.eql(u8, atoms[1].?, "barbaz"));
+}
+
+test "module fails if the table is too short" {
+    const module_with_atom = [_]u8{'F', 'O', 'R', '1', // HEADER
+                                    0, 0, 0, 28,
+                                   'B', 'E', 'A', 'M',
+                                   'A', 't', 'U', '8', // utf-8 atoms
+                                    0, 0, 0, 28,       // length of this table
+                                    0, 0, 0, 2,        // number of atoms
+                                    3, 'f', 'o', 'o',  // atom1 len + string
+                                    6, 'b', 'a', 'r',  // atom2 + padding
+                                    'b', 'a', 'z', 0};
+
+    var module_slice = module_with_atom[runtime_zero..];
+
+    _ = Module.from_slice(test_allocator, module_slice) catch | err | switch (err) {
+        ModuleError.TOO_SHORT => return,
+        else => unreachable,
+    };
 }
