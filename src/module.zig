@@ -9,6 +9,8 @@ const Debug = @import("std").debug;
 const Form = @import("module/form.zig");
 const AtomTable = @import("module/atom.zig").AtomTable;
 const ExptTable = @import("module/expt.zig").ExptTable;
+const ImptTable = @import("module/impt.zig").ImptTable;
+const CodeTable = @import("module/code.zig").CodeTable;
 
 pub const ModuleError = error {
     INVALID_CHUNK,
@@ -20,8 +22,8 @@ pub const ModuleError = error {
 pub const Module = struct {
     atomtable: ?AtomTable = null,
     expttable: ?ExptTable = null,
-    impttable: u0 = 0,
-    codetable: u0 = 0,
+    impttable: ?ImptTable = null,
+    codetable: ?CodeTable = null,
     strttable: u0 = 0,
     attrtable: u0 = 0,
     cinftable: u0 = 0,
@@ -60,6 +62,10 @@ pub const Module = struct {
               module.atomtable = try AtomTable.parse(module.allocator, slice),
             .EXPT =>
               module.expttable = try ExptTable.parse(module.allocator, slice),
+            .IMPT =>
+              module.impttable = try ImptTable.parse(module.allocator, slice),
+            .CODE =>
+              module.codetable = try CodeTable.parse(module.allocator, slice),
             else =>
               unreachable,
         }
@@ -68,6 +74,8 @@ pub const Module = struct {
     pub fn destroy(module: *Module) void {
         if (module.atomtable) | *table | { AtomTable.destroy(table); }
         if (module.expttable) | *table | { ExptTable.destroy(table); }
+        if (module.impttable) | *table | { ImptTable.destroy(table); }
+        if (module.codetable) | *table | { CodeTable.destroy(table); }
     }
 
     pub fn dump(mod: Module) void {}
