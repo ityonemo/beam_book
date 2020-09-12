@@ -39,7 +39,7 @@ pub const AtomTable = struct{
         Debug.assert(Mem.eql(u8, source[0..4], "AtU8"));
 
         // first 4-byte segment is the "total chunk length"
-        var chunk_length: usize = Module.little_bytes_to_value(source[4..8]);
+        var chunk_length: usize = Module.little_bytes_to_usize(source[4..8]);
 
         // verify that this our source is long enough and is aligned well
         if (chunk_length > source.len) return ModuleError.TOO_SHORT;
@@ -47,7 +47,7 @@ pub const AtomTable = struct{
         defer source_ptr.* = source[chunk_length..];
 
         // next 4-byte segment is the "total number of atoms"
-        var atom_count: usize = Module.little_bytes_to_value(source[8..12]);
+        var atom_count: usize = Module.little_bytes_to_usize(source[8..12]);
 
         // build a basic entries table.
         var entries = try build_entries(allocator, atom_count);
@@ -95,7 +95,6 @@ pub const AtomTable = struct{
 // //////////////////////////////////////////////////////////////////////////
 // TESTING
 
-const Heap = @import("std").heap;
 const test_allocator = @import("std").testing.allocator;
 const assert = @import("std").debug.assert;
 var runtime_zero: usize = 0;

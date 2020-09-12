@@ -22,18 +22,13 @@ pub fn validate(binary: []const u8) !usize {
 
     var size: usize = switch (Builtin.endian) {
         .Big => Mem.bytesToValue(u32, binary[4..8]),
-        .Little => Module.little_bytes_to_value(binary[4..8]),
+        .Little => Module.little_bytes_to_usize(binary[4..8]),
     };
 
     if (binary.len != size + 8) return ModuleError.MISMATCHED_SIZE;
     if (! Mem.eql(u8, binary[0..4], prefix[0..4])) return FormError.INVALID_HEADER;
     if (! Mem.eql(u8, binary[8..12], suffix[0..4])) return FormError.INVALID_HEADER;
     return size;
-}
-
-fn little_bytes_to_value(src: []const u8) usize {
-    var slice = [_]u8{src[3], src[2], src[1], src[0]};
-    return Mem.bytesToValue(u32, slice[0..]);
 }
 
 // ////////////////////////////////////////////////////////////////////////////

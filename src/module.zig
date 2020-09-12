@@ -8,6 +8,7 @@ const Debug = @import("std").debug;
 // chunk parsing dependencies
 const Form = @import("module/form.zig");
 const AtomTable = @import("module/atom.zig").AtomTable;
+const ExptTable = @import("module/expt.zig").ExptTable;
 
 pub const ModuleError = error {
     INVALID_CHUNK,
@@ -18,7 +19,7 @@ pub const ModuleError = error {
 
 pub const Module = struct {
     atomtable: ?AtomTable = null,
-    expttable: u0 = 0,
+    expttable: ?ExptTable = null,
     impttable: u0 = 0,
     codetable: u0 = 0,
     strttable: u0 = 0,
@@ -57,6 +58,8 @@ pub const Module = struct {
         switch (@intToEnum(chunk_t, Mem.bytesToValue(u32, slice.*[0..4]))) {
             .ATOM =>
               module.atomtable = try AtomTable.parse(module.allocator, slice),
+            .EXPT =>
+              module.expttable = try ExptTable.parse(module.allocator, slice),
             else =>
               unreachable,
         }
@@ -64,12 +67,20 @@ pub const Module = struct {
 
     pub fn destroy(module: *Module) void {
         if (module.atomtable) | *table | { AtomTable.destroy(table); }
+        if (module.expttable) | *table | { ExptTable.destroy(table); }
     }
 
     pub fn dump(mod: Module) void {}
 
     /// general helper function used everywhere
-    pub fn little_bytes_to_value(src: []const u8) usize {
+    pub fn little_bytes_to_usize(src: *const [4]u8) usize {
+        return little_bytes_to(usize, src);
+    }
+    pub fn little_bytes_to_u32(src: *const [4]u8) u32 {
+        return little_bytes_to(u32, src);
+    }
+
+    pub fn little_bytes_to(comptime t: type, src: *const [4]u8) t {
         var slice = [_]u8{src[3], src[2], src[1], src[0]};
         return Mem.bytesToValue(u32, slice[0..]);
     }
