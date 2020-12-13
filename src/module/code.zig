@@ -13,29 +13,35 @@ pub const CodeTable = struct{
     const Code = struct{
         instruction_set: u32,
         max_opcode: u32,
-        labels: u32,
-        functions: u32,
+        labels: usize,
+        functions: usize,
         code: []u8,
+
+        const subheader_params = 4;
 
         fn parse(allocator: *Mem.Allocator, entry_ptr: *?Code, slice_ptr: *[] const u8) !void {
             var slice = slice_ptr.*;
-            // did we run out of atoms?
-            if (slice.len == 0) return ModuleError.TOO_SHORT;
+            if (slice.len < 4) return ModuleError.TOO_SHORT;
 
-            var size: usize = slice[0];
-            // verify that the length is correct
-            if (size >= slice.len) return ModuleError.TOO_SHORT;
+            var sub_size = Module.little_bytes_to_usize(slice[0..4]) + 4;
+            var code_len = slice.len - sub_size;
+            // do we have enough for the subheader
+            if (slice.len < sub_size) return ModuleError.TOO_SHORT;
+
+            var code_seg = try allocator.alloc(u8, code_len);
+            Mem.copy(u8, code_seg, slice[sub_size..]);
 
             entry_ptr.* = Code{
-                .instruction_set = undefined,
-                .max_opcode = undefined,
-                .labels = undefined,
-                .functions = undefined,
-                .code = undefined,
+                .instruction_set = Module.little_bytes_to_u32(slice[4..8]),
+                .max_opcode = Module.little_bytes_to_u32(slice[8..12]),
+                .labels = Module.little_bytes_to_usize(slice[12..16]),
+                .functions = Module.little_bytes_to_usize(slice[16..20]),
+                .code = code_seg,
             };
 
-            // advance the slice pointer.
-            slice_ptr.* = slice[1 + size..];
+            // advance the slice pointer.  For code chunks, this shoul be
+            // the entire slice.
+            slice_ptr.* = slice[(sub_size + code_len)..];
         }
     };
 
@@ -93,6 +99,7 @@ pub const CodeTable = struct{
     // safely clears entries that have been built, whether or not they
     // contain null values.
     fn clear_entries(allocator: *Mem.Allocator, entries: entries_t) void {
+        allocator.free(entries[0].?.code);
         allocator.free(entries);
     }
 
@@ -111,21 +118,29 @@ const assert = @import("std").debug.assert;
 var runtime_zero: usize = 0;
 
 test "export parser works on a export binary" {
-    const foo_atom = [_]u8{0, 0, 0, 47, 0, 0, 0, 47, 0, 0, 0, 47};
+    const foo_atom = [_]u8{
+        0, 0, 0, 16,  // sub-size
+        0, 0, 0, 47,  // instruction set
+        0, 0, 0, 47,  // max opcode
+        0, 0, 0, 47,  // labels
+        0, 0, 0, 47,  // functions
+        'q', 'u', 'u', 'x'};
     var dest: ?CodeTable.Code = undefined;
     var source = foo_atom[runtime_zero..];
 
     try CodeTable.Code.parse(test_allocator, &dest, &source);
 
     // check that the parser has moved the source slice to the end.
-    assert(source.len == 0);
+    Testing.expectEqual(source.len, 0);
     // check the parsed value
 
-    Testing.expectEqual(dest.?.instruction_set, 47);
-    Testing.expectEqual(dest.?.max_opcode, 47);
-    Testing.expectEqual(dest.?.labels, 47);
-    Testing.expectEqual(dest.?.functions, 47);
-    Testing.expectEqualSlices(u8, dest.?.code, "foo");
+    Testing.expectEqual(@intCast(u32, 47), dest.?.instruction_set);
+    Testing.expectEqual(@intCast(u32, 47), dest.?.max_opcode);
+    Testing.expectEqual(@intCast(usize, 47), dest.?.labels);
+    Testing.expectEqual(@intCast(usize, 47), dest.?.functions);
+    Testing.expectEqualSlices(u8, "quux", dest.?.code);
+
+    test_allocator.free(dest.?.code);
 }
 
 // FAILURE PATHS
